@@ -1,4 +1,4 @@
---[[
+--[[init
 
 =====================================================================
 ==================== READ THIS BEFORE CONTINUING ====================
@@ -87,8 +87,12 @@ P.S. You can delete this when you're done too. It's your config now! :)
 -- Set <space> as the leader key
 -- See `:help mapleader`
 --  NOTE: Must happen before plugins are loaded (otherwise wrong leader will be used)
-vim.g.mapleader = ' '
+vim.g.mapleader = '\\'
 vim.g.maplocalleader = ' '
+
+-- Disable netrw
+vim.g.loaded_netrw = 1
+vim.g.loaded_netrwPlugin = 1
 
 -- Set to true if you have a Nerd Font installed and selected in the terminal
 vim.g.have_nerd_font = true
@@ -193,6 +197,18 @@ vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper win
 -- [[ Basic Autocommands ]]
 --  See `:help lua-guide-autocommands`
 
+-- Automatically update the tab name based on the Neo-tree directory
+vim.api.nvim_create_autocmd('BufEnter', {
+  pattern = '*',
+  callback = function()
+    -- Check if the current buffer is a Neo-tree buffer
+    if vim.bo.filetype == 'neo-tree' then
+      local current_dir = vim.fn.fnamemodify(vim.fn.expand '%:p:h', ':t')
+      vim.g.neo_tree_last_opened_dir = current_dir
+    end
+  end,
+})
+
 -- Highlight when yanking (copying) text
 --  Try it with `yap` in normal mode
 --  See `:help vim.highlight.on_yank()`
@@ -204,6 +220,22 @@ vim.api.nvim_create_autocmd('TextYankPost', {
   end,
 })
 
+vim.api.nvim_set_keymap('n', '<leader>ts', ':split | terminal<CR>:wincmd - 15<CR>', { noremap = true, silent = true })
+
+-- weird shi happening, comment for now
+-- Function to load a session when a specific argument is passed
+-- if vim.fn.argc() > 0 then -- Check if arguments are passed
+--   local session_name = vim.fn.argv(0) -- Get the first argument passed
+--   local session_file = vim.fn.expand '~/.config/nvim/sessions/' .. session_name .. '.vim'
+--
+--   -- Check if the session file exists
+--   if vim.fn.filereadable(session_file) == 1 then
+--     vim.cmd('source ' .. session_file) -- Load the session
+--   else
+--     print('Session file not found: ' .. session_file)
+--   end
+-- end
+--
 -- [[ Install `lazy.nvim` plugin manager ]]
 --    See `:help lazy.nvim.txt` or https://github.com/folke/lazy.nvim for more info
 local lazypath = vim.fn.stdpath 'data' .. '/lazy/lazy.nvim'
@@ -227,7 +259,9 @@ vim.opt.rtp:prepend(lazypath)
 --    :Lazy update
 --
 -- NOTE: Here is where you install your plugins.
+
 require('lazy').setup({
+  { 'neovim/nvim-lspconfig' },
   -- NOTE: Plugins can be added with a link (or for a github repo: 'owner/repo' link).
   'tpope/vim-sleuth', -- Detect tabstop and shiftwidth automatically
   -- NOTE: Plugins can also be added by using a table,
@@ -255,6 +289,29 @@ require('lazy').setup({
     },
   },
 
+  {
+    'nvim-neo-tree/neo-tree.nvim',
+    branch = 'v2.x',
+    dependencies = {
+      'nvim-lua/plenary.nvim',
+      'nvim-tree/nvim-web-devicons', -- optional, for file icons
+      'MunifTanjim/nui.nvim',
+    },
+    config = function()
+      require('neo-tree').setup {
+        close_if_last_window = true, -- Close Neo-tree if it is the last window
+        filesystem = {
+          follow_current_file = true, -- Automatically focus on the current file
+          hijack_netrw_behavior = 'open_default',
+          filtered_items = {
+            visible = true, -- When true, hidden files will still be shown
+            hide_dotfiles = false, -- Do not hide files starting with `.`
+            hide_gitignored = false, -- Do not hide gitignored files
+          },
+        },
+      }
+    end,
+  },
   -- NOTE: Plugins can also be configured to run Lua code when they are loaded.
   --
   -- This is often very useful to both group configuration, as well as handle
@@ -393,7 +450,6 @@ require('lazy').setup({
           },
         },
       }
-
       -- Enable Telescope extensions if they are installed
       pcall(require('telescope').load_extension, 'fzf')
       pcall(require('telescope').load_extension, 'ui-select')
@@ -451,12 +507,32 @@ require('lazy').setup({
   },
   { 'Bilal2453/luvit-meta', lazy = true },
   {
+    'ray-x/go.nvim',
+    dependencies = { -- optional packages
+      'ray-x/guihua.lua',
+      'neovim/nvim-lspconfig',
+      'nvim-treesitter/nvim-treesitter',
+    },
+    config = function()
+      require('go').setup()
+    end,
+    event = { 'CmdlineEnter' },
+    ft = { 'go', 'gomod' },
+    build = ':lua require("go.install").update_all_sync()', -- if you need to install/update all binaries
+  },
+  {
     -- Main LSP Configuration
     'neovim/nvim-lspconfig',
     dependencies = {
       -- Automatically install LSPs and related tools to stdpath for Neovim
       { 'williamboman/mason.nvim', config = true }, -- NOTE: Must be loaded before dependants
-      'williamboman/mason-lspconfig.nvim',
+      { 'williamboman/mason-lspconfig.nvim', lazy = true },
+      { 'neovim/nvim-lspconfig', lazy = true }, -- Core LSP support
+
+      -- Optional: Extra features for Go
+      { 'ray-x/go.nvim', dependencies = { 'ray-x/guihua.lua' } }, -- Go-specific features
+      { 'mfussenegger/nvim-dap' }, -- Debugging
+      { 'leoluz/nvim-dap-go' }, -- Debugging for Go
       'WhoIsSethDaniel/mason-tool-installer.nvim',
 
       -- Useful status updates for LSP.
@@ -613,8 +689,8 @@ require('lazy').setup({
       --  - settings (table): Override the default settings passed when initializing the server.
       --        For example, to see the options for `lua_ls`, you could go to: https://luals.github.io/wiki/settings/
       local servers = {
-        -- clangd = {},
-        -- gopls = {},
+        clangd = {},
+        gopls = {},
         -- pyright = {},
         -- rust_analyzer = {},
         -- ... etc. See `:help lspconfig-all` for a list of all the pre-configured LSPs
@@ -626,6 +702,19 @@ require('lazy').setup({
         -- ts_ls = {},
         --
 
+        -- Add YAML language server for Kubernetes YAML files
+        yamlls = {
+          cmd = { 'yaml-language-server', '--stdio' },
+          filetypes = { 'yaml', 'yml' },
+          settings = {
+            yaml = {
+              schemas = {
+                -- This is the Kubernetes JSON schema for Kubernetes resources
+                ['https://raw.githubusercontent.com/instrumenta/kubernetes-json-schema/master/v1.18.0-standalone-strict/all.json'] = '/k8s/*.yaml',
+              },
+            },
+          },
+        },
         lua_ls = {
           -- cmd = {...},
           -- filetypes = { ...},
@@ -925,11 +1014,11 @@ require('lazy').setup({
   --  Here are some example plugins that I've included in the Kickstart repository.
   --  Uncomment any of the lines below to enable them (you will need to restart nvim).
   --
+  require 'kickstart.plugins.neo-tree',
   require 'kickstart.plugins.debug',
   require 'kickstart.plugins.indent_line',
   require 'kickstart.plugins.lint',
   require 'kickstart.plugins.autopairs',
-  require 'kickstart.plugins.neo-tree',
   require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
